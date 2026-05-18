@@ -1374,6 +1374,21 @@ async function ensureRuntime(backend) {
     }
 
     rememberLog('[bootstrap] no Hermes install found; starting first-launch bootstrap')
+
+    // Eagerly flip the bootstrap UI state to 'active' so the renderer
+    // shows the install overlay BEFORE the runner finishes fetching the
+    // manifest (which on slow networks can take tens of seconds and would
+    // otherwise leave the user staring at the generic 'Preparing' splash).
+    // We emit a synthetic manifest with an empty stages list -- the real
+    // manifest event will overwrite it once install.ps1 -Manifest returns.
+    try {
+      broadcastBootstrapEvent({
+        type: 'manifest',
+        stages: [],
+        protocolVersion: null
+      })
+    } catch {}
+
     const bootstrapResult = await runBootstrap({
       installStamp: backend.installStamp,
       activeRoot: backend.activeRoot,

@@ -256,7 +256,7 @@ export function DesktopInstallOverlay({ enabled = true }: DesktopInstallOverlayP
     const ups = state.unsupportedPlatform
     const platformLabel = ups.platform === 'darwin' ? 'macOS' : ups.platform === 'linux' ? 'Linux' : ups.platform
     return (
-      <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/90 backdrop-blur-md">
+      <div className="fixed inset-0 z-[1400] flex items-center justify-center bg-background/90 backdrop-blur-md">
         <div className="w-full max-w-xl rounded-xl border bg-card p-8 shadow-xl">
           <h2 className="text-2xl font-semibold tracking-tight">Hermes needs a one-time install</h2>
           <p className="mt-2 text-sm text-muted-foreground">
@@ -318,7 +318,7 @@ export function DesktopInstallOverlay({ enabled = true }: DesktopInstallOverlayP
   const progressPct = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-background/90 backdrop-blur-md">
+    <div className="fixed inset-0 z-[1400] flex items-center justify-center bg-background/90 backdrop-blur-md">
       <div className="w-full max-w-2xl rounded-xl border bg-card p-8 shadow-xl">
         <div className="mb-6">
           <h2 className="text-2xl font-semibold tracking-tight">
