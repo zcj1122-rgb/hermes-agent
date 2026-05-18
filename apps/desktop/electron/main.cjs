@@ -22,6 +22,7 @@ const path = require('node:path')
 const { fileURLToPath, pathToFileURL } = require('node:url')
 const { execFileSync, spawn } = require('node:child_process')
 const { isWindowsBinaryPathInWsl, isWslEnvironment } = require('./bootstrap-platform.cjs')
+const { runBootstrap } = require('./bootstrap-runner.cjs')
 const {
   DATA_URL_READ_MAX_BYTES,
   DEFAULT_FETCH_TIMEOUT_MS,
@@ -1261,22 +1262,54 @@ async function ensureRuntime(backend) {
   }
 
   // backend.kind === 'bootstrap-needed' means resolveHermesBackend couldn't
-  // find anything to spawn. Phase 1D will wire this up to the install.ps1
-  // stage runner; until then, surface a clear error so the UI knows what
-  // happened and the user gets actionable guidance instead of silence.
+  // find anything to spawn. Hand off to the bootstrap runner which drives
+  // install.ps1's stage protocol, writes the bootstrap-complete marker on
+  // success, then we re-resolve to get the now-installed backend.
+  //
+  // Phase 1D status: bootstrap runs but events go to desktop.log only
+  // (renderer window isn't created until later in startBackend). Phase 1E
+  // will rewire startup to spawn the window first and route bootstrap events
+  // to a renderer-side install overlay.
   if (backend.kind === 'bootstrap-needed') {
-    const stamp = backend.installStamp
-    const stampInfo = stamp
-      ? `pinned to ${stamp.commit.slice(0, 12)}${stamp.branch ? ` (${stamp.branch})` : ''}`
-      : 'no install stamp available (dev build)'
-    const platformHint = IS_WINDOWS
-      ? 'The first-launch installer will fetch and run scripts/install.ps1 to set this up (coming in Phase 1D).'
-      : 'On macOS/Linux, run scripts/install.sh from the Hermes repo manually, then relaunch this app. ' +
-        'Native first-launch install is not yet implemented for non-Windows platforms.'
-    throw new Error(
-      `Hermes Agent is not installed yet at ${backend.activeRoot}. ${platformHint} ` +
-        `(${stampInfo})`
-    )
+    if (process.platform !== 'win32') {
+      // macOS/Linux: install.sh doesn't yet support the stage protocol that
+      // install.ps1 does, so we can't drive a first-launch bootstrap. Phase
+      // 1F adds a degradation overlay; for now, surface a clear error.
+      throw new Error(
+        `Hermes Agent is not installed at ${backend.activeRoot}. On macOS/Linux ` +
+          'first-launch install is not yet automated -- run scripts/install.sh ' +
+          'from the Hermes repo manually, then relaunch this app.'
+      )
+    }
+
+    rememberLog('[bootstrap] no Hermes install found; starting first-launch bootstrap')
+    const bootstrapResult = await runBootstrap({
+      installStamp: backend.installStamp,
+      activeRoot: backend.activeRoot,
+      sourceRepoRoot: SOURCE_REPO_ROOT,
+      hermesHome: HERMES_HOME,
+      logRoot: path.join(HERMES_HOME, 'logs'),
+      onEvent: ev => {
+        // For now just tee to desktop.log. Phase 1E adds IPC to renderer.
+        try {
+          rememberLog(`[bootstrap] ${JSON.stringify(ev)}`)
+        } catch {}
+      },
+      writeMarker: writeBootstrapMarker
+    })
+
+    if (!bootstrapResult.ok) {
+      throw new Error(
+        `Hermes bootstrap failed${bootstrapResult.failedStage ? ` at stage '${bootstrapResult.failedStage}'` : ''}: ` +
+          `${bootstrapResult.error || 'unknown error'}. ` +
+          `Check ${path.join(HERMES_HOME, 'logs', 'desktop.log')} for the full transcript.`
+      )
+    }
+
+    rememberLog('[bootstrap] bootstrap complete; marker written. Re-resolving backend.')
+    // Re-resolve now that the install exists. The new resolution lands in
+    // step 3 (bootstrap-complete marker) and we recurse to wire venvPython.
+    return ensureRuntime(resolveHermesBackend(backend.args))
   }
 
   // bootstrap=true with a real backend (createActiveBackend path) means we
